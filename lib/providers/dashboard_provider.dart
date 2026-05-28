@@ -1,0 +1,78 @@
+import 'package:flutter_riverpod/legacy.dart';
+import '../services/api_service.dart';
+import '../utils/currency_converter.dart';
+
+class DashboardState {
+  final Map<String, double> balances;
+  final double selfReceiptPercentage;
+  final bool isLoading;
+  final String? error;
+  final List<dynamic> activeProjects;
+  final List<dynamic> expiringProjects;
+
+  DashboardState({
+    this.balances = const {'USD': 0, 'TZS': 0, 'KES': 0},
+    this.selfReceiptPercentage = 0.0,
+    this.isLoading = false,
+    this.error,
+    this.activeProjects = const [],
+    this.expiringProjects = const [],
+  });
+
+  DashboardState copyWith({
+    Map<String, double>? balances,
+    double? selfReceiptPercentage,
+    bool? isLoading,
+    String? error,
+    List<dynamic>? activeProjects,
+    List<dynamic>? expiringProjects,
+  }) {
+    return DashboardState(
+      balances: balances ?? this.balances,
+      selfReceiptPercentage: selfReceiptPercentage ?? this.selfReceiptPercentage,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+      activeProjects: activeProjects ?? this.activeProjects,
+      expiringProjects: expiringProjects ?? this.expiringProjects,
+    );
+  }
+}
+
+class DashboardNotifier extends StateNotifier<DashboardState> {
+  final ApiService _apiService;
+
+  DashboardNotifier(this._apiService) : super(DashboardState());
+
+  Future<void> fetchDashboardData() async {
+    state = state.copyWith(isLoading: true);
+    try {
+      try {
+        final rates = await _apiService.getRates();
+        CurrencyConverter.updateRates(rates);
+        if (rates['TZS'] == 2500.0 && rates['KES'] == 130.0) {
+          await CurrencyConverter.fetchFallbackRates();
+        }
+      } catch (e) {
+        await CurrencyConverter.fetchFallbackRates();
+      }
+
+      final balances = await _apiService.getBalance();
+      final percentage = await _apiService.getSelfReceiptPercentage();
+      final projectData = await _apiService.getDashboardProjects();
+      
+      state = state.copyWith(
+        balances: balances,
+        selfReceiptPercentage: percentage,
+        activeProjects: projectData['active_projects'] ?? [],
+        expiringProjects: projectData['expiring_projects'] ?? [],
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: e.toString(), isLoading: false);
+    }
+  }
+}
+
+final dashboardProvider = StateNotifierProvider<DashboardNotifier, DashboardState>((ref) {
+  return DashboardNotifier(ref.watch(apiServiceProvider));
+});
